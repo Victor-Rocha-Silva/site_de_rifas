@@ -10,16 +10,30 @@ class RaffleNumber extends Model
         'raffle_id',
         'number',
         'status',
-        'purchase_id',
+        'order_id',
+        'customer_user_id',
+        'assigned_at',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'assigned_at' => 'datetime',
+        ];
+    }
 
     public function raffle()
     {
         return $this->belongsTo(Raffle::class);
     }
 
-    public function purchase()
+    public function order()
     {
-        return $this->belongsTo(Purchase::class);
+        return $this->belongsTo(Order::class);
+    }
+
+    public function customer()
+    {
+        return $this->belongsTo(User::class, 'customer_user_id');
     }
 }

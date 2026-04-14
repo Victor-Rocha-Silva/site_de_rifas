@@ -4,14 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-class Prize extends Model
+class RafflePrize extends Model
 {
     protected $fillable = [
         'raffle_id',
         'title',
         'description',
-        'position',
-        'estimated_cost',
+        'image_path',
+        'sort_order',
     ];
 
     public function raffle()

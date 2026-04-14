@@ -8,19 +8,19 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('prizes', function (Blueprint $table) {
+        Schema::create('raffle_prizes', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('raffle_id')->constrained('raffles')->onDelete('cascade');
+            $table->foreignId('raffle_id')->constrained()->cascadeOnDelete();
             $table->string('title');
             $table->text('description')->nullable();
-            $table->integer('position')->default(1);
-            $table->decimal('estimated_cost', 10, 2)->nullable();
+            $table->string('image_path')->nullable();
+            $table->unsignedInteger('sort_order')->default(0);
             $table->timestamps();
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('prizes');
+        Schema::dropIfExists('raffle_prizes');
     }
 };
