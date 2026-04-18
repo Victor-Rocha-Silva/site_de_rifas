@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\Admin\UploadController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PublicRaffleController;
+use App\Http\Controllers\Api\CustomerRaffleController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -26,6 +27,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/orders', [OrderController::class, 'store']);
     Route::get('/customer/orders', [OrderController::class, 'index']);
     Route::get('/customer/orders/{publicId}', [OrderController::class, 'show']);
+
+    Route::get('/customer/raffles', [CustomerRaffleController::class, 'index']);
+    Route::get('/customer/raffles/{raffle}', [CustomerRaffleController::class, 'show']);
 });
 
 Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
@@ -33,6 +37,8 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     Route::post('/raffles', [AdminRaffleController::class, 'store']);
     Route::get('/raffles/{raffle}', [AdminRaffleController::class, 'show']);
     Route::put('/raffles/{raffle}', [AdminRaffleController::class, 'update']);
+    Route::delete('/raffles/{raffle}', [AdminRaffleController::class, 'destroy']);
+    Route::get('/raffles/{raffle}/orders', [AdminOrderController::class, 'byRaffle']);
 
     Route::post('/raffles/{raffle}/prizes', [RafflePrizeController::class, 'store']);
     Route::put('/prizes/{prize}', [RafflePrizeController::class, 'update']);

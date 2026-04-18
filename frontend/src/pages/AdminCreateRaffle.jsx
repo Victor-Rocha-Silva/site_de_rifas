@@ -1,397 +1,859 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import api from "../services/api";
-import uploadImage from "../services/uploadImage";
-import AdminRafflePreview from "../components/AdminRafflePreview";
+import FloatingBackground from "../components/FloatingBackground";
+import { useToast } from "../context/ToastContext";
+
+function generateSlug(text) {
+  return String(text || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-");
+}
+
+function getErrorMessage(error) {
+  const data = error?.response?.data;
+
+  if (data?.errors) {
+    const firstKey = Object.keys(data.errors)[0];
+    if (firstKey && Array.isArray(data.errors[firstKey])) {
+      return data.errors[firstKey][0];
+    }
+  }
+
+  return data?.message || "Não foi possível criar a rifa.";
+}
+
+function emptyPrize(sortOrder = 1) {
+  return {
+    title: "",
+    description: "",
+    image_path: "",
+    sort_order: sortOrder,
+    preview: "",
+    uploading: false,
+  };
+}
 
 export default function AdminCreateRaffle() {
   const navigate = useNavigate();
+  const { success, error: showError, info } = useToast();
 
   const [form, setForm] = useState({
     title: "",
+    slug: "",
     subtitle: "",
     description: "",
     instagram_url: "",
+    banner_path: "",
+    logo_path: "",
     total_numbers: 100,
-    price_per_ticket: 1,
-    status: "active",
-    background_color: "#6D28D9",
-    text_color: "#FFFFFF",
-    button_color: "#F59E0B",
-    button_text_color: "#111827",
-    prize1_title: "",
-    prize1_description: "",
-    prize2_title: "",
-    prize2_description: "",
+    price_per_ticket: "2.50",
+    status: "draft",
+    starts_at: "",
+    ends_at: "",
+    draw_at: "",
+    design: {
+      background_color: "#0f172a",
+      text_color: "#ffffff",
+      button_color: "#7c3aed",
+      button_text_color: "#ffffff",
+    },
   });
 
-  const [files, setFiles] = useState({
-    banner: null,
-    logo: null,
-    prize1: null,
-    prize2: null,
-  });
+  const [slugTouched, setSlugTouched] = useState(false);
+  const [bannerPreview, setBannerPreview] = useState("");
+  const [logoPreview, setLogoPreview] = useState("");
+  const [prizes, setPrizes] = useState([emptyPrize(1)]);
+  const [saving, setSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
-  const [previewUrls, setPreviewUrls] = useState({
-    banner: null,
-    logo: null,
-    prize1: null,
-    prize2: null,
-  });
-
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-
-  useEffect(() => {
-    const bannerUrl = files.banner ? URL.createObjectURL(files.banner) : null;
-    const logoUrl = files.logo ? URL.createObjectURL(files.logo) : null;
-    const prize1Url = files.prize1 ? URL.createObjectURL(files.prize1) : null;
-    const prize2Url = files.prize2 ? URL.createObjectURL(files.prize2) : null;
-
-    setPreviewUrls({
-      banner: bannerUrl,
-      logo: logoUrl,
-      prize1: prize1Url,
-      prize2: prize2Url,
-    });
-
-    return () => {
-      if (bannerUrl) URL.revokeObjectURL(bannerUrl);
-      if (logoUrl) URL.revokeObjectURL(logoUrl);
-      if (prize1Url) URL.revokeObjectURL(prize1Url);
-      if (prize2Url) URL.revokeObjectURL(prize2Url);
+  const previewData = useMemo(() => {
+    return {
+      title: form.title || "Título da rifa",
+      subtitle: form.subtitle || "Subtítulo da sua rifa",
+      description:
+        form.description || "Descrição da rifa para pré-visualização.",
+      background_color: form.design.background_color || "#0f172a",
+      text_color: form.design.text_color || "#ffffff",
+      button_color: form.design.button_color || "#7c3aed",
+      button_text_color: form.design.button_text_color || "#ffffff",
+      total_numbers: Number(form.total_numbers || 0),
+      price_per_ticket: Number(form.price_per_ticket || 0),
+      prizes,
+      bannerPreview,
+      logoPreview,
+      status: form.status,
     };
-  }, [files]);
+  }, [form, prizes, bannerPreview, logoPreview]);
 
-  const previewPrizes = useMemo(() => {
-    return [
-      form.prize1_title
-        ? {
-            tempId: "prize1",
-            title: form.prize1_title,
-            description: form.prize1_description,
-            previewUrl: previewUrls.prize1,
-          }
-        : null,
-      form.prize2_title
-        ? {
-            tempId: "prize2",
-            title: form.prize2_title,
-            description: form.prize2_description,
-            previewUrl: previewUrls.prize2,
-          }
-        : null,
-    ].filter(Boolean);
-  }, [form, previewUrls]);
-
-  function handleChange(e) {
-    const { name, value } = e.target;
-
+  function updateForm(field, value) {
     setForm((prev) => ({
       ...prev,
-      [name]: value,
+      [field]: value,
     }));
   }
 
-  function handleFileChange(e) {
-    const { name, files: selectedFiles } = e.target;
-
-    setFiles((prev) => ({
+  function updateDesign(field, value) {
+    setForm((prev) => ({
       ...prev,
-      [name]: selectedFiles?.[0] || null,
+      design: {
+        ...prev.design,
+        [field]: value,
+      },
     }));
   }
 
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
-    setMessage("");
+  function handleTitleChange(value) {
+    setForm((prev) => ({
+      ...prev,
+      title: value,
+      slug: slugTouched ? prev.slug : generateSlug(value),
+    }));
+  }
+
+  function handleSlugChange(value) {
+    setSlugTouched(true);
+    setForm((prev) => ({
+      ...prev,
+      slug: generateSlug(value),
+    }));
+  }
+
+  function updatePrize(index, field, value) {
+    setPrizes((prev) =>
+      prev.map((prize, i) =>
+        i === index
+          ? {
+              ...prize,
+              [field]: value,
+            }
+          : prize
+      )
+    );
+  }
+
+  function addPrize() {
+    setPrizes((prev) => [...prev, emptyPrize(prev.length + 1)]);
+  }
+
+  function removePrize(index) {
+    setPrizes((prev) => {
+      if (prev.length === 1) return prev;
+
+      return prev
+        .filter((_, i) => i !== index)
+        .map((item, idx) => ({
+          ...item,
+          sort_order: idx + 1,
+        }));
+    });
+  }
+
+  async function uploadImage(file) {
+    const formData = new FormData();
+    formData.append("image", file);
+
+    const response = await api.post("/admin/uploads/image", formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    });
+
+    return (
+      response?.data?.path ||
+      response?.data?.image_path ||
+      response?.data?.file_path ||
+      response?.data?.url ||
+      ""
+    );
+  }
+
+  async function handleBannerUpload(file) {
+    if (!file) return;
+
+    setErrorMessage("");
+    setBannerPreview(URL.createObjectURL(file));
+    info("Enviando banner", "A imagem do banner está sendo enviada.");
 
     try {
-      const bannerUpload = files.banner ? await uploadImage(files.banner) : null;
-      const logoUpload = files.logo ? await uploadImage(files.logo) : null;
-      const prize1Upload = files.prize1 ? await uploadImage(files.prize1) : null;
-      const prize2Upload = files.prize2 ? await uploadImage(files.prize2) : null;
+      const path = await uploadImage(file);
+      updateForm("banner_path", path);
+      success("Banner enviado", "O banner foi salvo com sucesso.");
+    } catch (error) {
+      const message = getErrorMessage(error);
+      setErrorMessage(message);
+      showError("Falha no banner", message);
+    }
+  }
 
+  async function handleLogoUpload(file) {
+    if (!file) return;
+
+    setErrorMessage("");
+    setLogoPreview(URL.createObjectURL(file));
+    info("Enviando logo", "A imagem da logo está sendo enviada.");
+
+    try {
+      const path = await uploadImage(file);
+      updateForm("logo_path", path);
+      success("Logo enviada", "A logo foi salva com sucesso.");
+    } catch (error) {
+      const message = getErrorMessage(error);
+      setErrorMessage(message);
+      showError("Falha na logo", message);
+    }
+  }
+
+  async function handlePrizeImageUpload(index, file) {
+    if (!file) return;
+
+    setErrorMessage("");
+    updatePrize(index, "preview", URL.createObjectURL(file));
+    updatePrize(index, "uploading", true);
+    info("Enviando imagem", `A imagem do prêmio ${index + 1} está sendo enviada.`);
+
+    try {
+      const path = await uploadImage(file);
+      updatePrize(index, "image_path", path);
+      success("Imagem enviada", `A imagem do prêmio ${index + 1} foi salva.`);
+    } catch (error) {
+      const message = getErrorMessage(error);
+      setErrorMessage(message);
+      showError("Falha no upload", message);
+    } finally {
+      updatePrize(index, "uploading", false);
+    }
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setSaving(true);
+    setErrorMessage("");
+
+    try {
       const payload = {
-        title: form.title,
-        subtitle: form.subtitle || null,
-        description: form.description || null,
-        instagram_url: form.instagram_url || null,
-        banner_path: bannerUpload?.path || null,
-        logo_path: logoUpload?.path || null,
+        ...form,
+        slug: form.slug || generateSlug(form.title),
         total_numbers: Number(form.total_numbers),
         price_per_ticket: Number(form.price_per_ticket),
-        status: form.status,
-        design: {
-          background_color: form.background_color,
-          text_color: form.text_color,
-          button_color: form.button_color,
-          button_text_color: form.button_text_color,
-        },
-        prizes: [
-          form.prize1_title
-            ? {
-                title: form.prize1_title,
-                description: form.prize1_description || null,
-                image_path: prize1Upload?.path || null,
-                sort_order: 1,
-              }
-            : null,
-          form.prize2_title
-            ? {
-                title: form.prize2_title,
-                description: form.prize2_description || null,
-                image_path: prize2Upload?.path || null,
-                sort_order: 2,
-              }
-            : null,
-        ].filter(Boolean),
+        starts_at: form.starts_at || null,
+        ends_at: form.ends_at || null,
+        draw_at: form.draw_at || null,
+        prizes: prizes
+          .filter((prize) => prize.title.trim() !== "")
+          .map((prize, index) => ({
+            title: prize.title,
+            description: prize.description || null,
+            image_path: prize.image_path || null,
+            sort_order: index + 1,
+          })),
       };
 
       await api.post("/admin/raffles", payload);
 
-      setMessage("Rifa criada com sucesso.");
-
-      setTimeout(() => {
-        navigate("/admin/rifas");
-      }, 1200);
-    } catch (err) {
-      setError(err.response?.data?.message || "Erro ao criar rifa.");
+      success("Rifa criada", "A nova rifa foi cadastrada com sucesso.");
+      navigate("/admin/rifas");
+    } catch (error) {
+      const message = getErrorMessage(error);
+      setErrorMessage(message);
+      showError("Erro ao criar rifa", message);
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   }
 
   return (
-    <div className="container admin-preview-layout">
-      <div>
+    <div className="admin-premium-page">
+      <FloatingBackground />
+
+      <div className="container admin-premium-container">
         <div className="page-header">
           <h1>Nova rifa</h1>
-          <p>Crie uma nova rifa com tema, imagens e prêmios.</p>
+          <p>Crie uma nova rifa com identidade visual, prêmios e imagens.</p>
         </div>
 
-        <form className="glass-card" onSubmit={handleSubmit}>
-          <label>Título</label>
-          <input
-            name="title"
-            value={form.title}
-            onChange={handleChange}
-            placeholder="Ex: Rifa iPhone 15"
-            required
-          />
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1.2fr 0.8fr",
+            gap: 20,
+            alignItems: "start",
+          }}
+        >
+          <form className="glass-card" onSubmit={handleSubmit}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                alignItems: "center",
+                marginBottom: 18,
+                flexWrap: "wrap",
+              }}
+            >
+              <div>
+                <h2 style={{ margin: 0 }}>Dados principais</h2>
+                <p className="muted-text" style={{ marginTop: 6 }}>
+                  Preencha os dados da sua rifa.
+                </p>
+              </div>
 
-          <br /><br />
+              <Link to="/admin/rifas">
+                <button type="button" className="secondary-btn">
+                  Voltar
+                </button>
+              </Link>
+            </div>
 
-          <label>Subtítulo</label>
-          <input
-            name="subtitle"
-            value={form.subtitle}
-            onChange={handleChange}
-            placeholder="Ex: Participe agora"
-          />
+            <div style={{ display: "grid", gap: 16 }}>
+              <div>
+                <label>Título da rifa</label>
+                <input
+                  type="text"
+                  value={form.title}
+                  onChange={(e) => handleTitleChange(e.target.value)}
+                  placeholder="Ex: Rifa iPhone 15"
+                />
+              </div>
 
-          <br /><br />
+              <div>
+                <label>Slug</label>
+                <input
+                  type="text"
+                  value={form.slug}
+                  onChange={(e) => handleSlugChange(e.target.value)}
+                  placeholder="rifa-iphone-15"
+                />
+                <small className="muted-text">URL: /rifa/{form.slug || "slug-da-rifa"}</small>
+              </div>
 
-          <label>Descrição</label>
-          <textarea
-            name="description"
-            value={form.description}
-            onChange={handleChange}
-            placeholder="Descreva a rifa"
-          />
+              <div>
+                <label>Subtítulo</label>
+                <input
+                  type="text"
+                  value={form.subtitle}
+                  onChange={(e) => updateForm("subtitle", e.target.value)}
+                  placeholder="Ex: Participe agora"
+                />
+              </div>
 
-          <br /><br />
+              <div>
+                <label>Descrição</label>
+                <textarea
+                  rows="5"
+                  value={form.description}
+                  onChange={(e) => updateForm("description", e.target.value)}
+                  placeholder="Descreva a rifa"
+                />
+              </div>
 
-          <label>Instagram URL</label>
-          <input
-            name="instagram_url"
-            value={form.instagram_url}
-            onChange={handleChange}
-            placeholder="https://instagram.com/..."
-          />
+              <div>
+                <label>Instagram</label>
+                <input
+                  type="url"
+                  value={form.instagram_url}
+                  onChange={(e) => updateForm("instagram_url", e.target.value)}
+                  placeholder="https://instagram.com/suarifa"
+                />
+              </div>
 
-          <br /><br />
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(3, 1fr)",
+                  gap: 16,
+                }}
+              >
+                <div>
+                  <label>Total de números</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={form.total_numbers}
+                    onChange={(e) => updateForm("total_numbers", e.target.value)}
+                  />
+                </div>
 
-          <label>Banner</label>
-          <input
-            type="file"
-            name="banner"
-            accept="image/*"
-            onChange={handleFileChange}
-          />
+                <div>
+                  <label>Valor por cota</label>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={form.price_per_ticket}
+                    onChange={(e) => updateForm("price_per_ticket", e.target.value)}
+                  />
+                </div>
 
-          <br /><br />
+                <div>
+                  <label>Status inicial</label>
+                  <select
+                    value={form.status}
+                    onChange={(e) => updateForm("status", e.target.value)}
+                  >
+                    <option value="draft">Rascunho</option>
+                    <option value="active">Ativa</option>
+                    <option value="paused">Pausada</option>
+                    <option value="finished">Finalizada</option>
+                  </select>
+                </div>
+              </div>
 
-          <label>Logo</label>
-          <input
-            type="file"
-            name="logo"
-            accept="image/*"
-            onChange={handleFileChange}
-          />
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(3, 1fr)",
+                  gap: 16,
+                }}
+              >
+                <div>
+                  <label>Início</label>
+                  <input
+                    type="datetime-local"
+                    value={form.starts_at}
+                    onChange={(e) => updateForm("starts_at", e.target.value)}
+                  />
+                </div>
 
-          <br /><br />
+                <div>
+                  <label>Encerramento</label>
+                  <input
+                    type="datetime-local"
+                    value={form.ends_at}
+                    onChange={(e) => updateForm("ends_at", e.target.value)}
+                  />
+                </div>
 
-          <label>Total de números</label>
-          <input
-            type="number"
-            name="total_numbers"
-            value={form.total_numbers}
-            onChange={handleChange}
-            min="1"
-            max="100000"
-            required
-          />
+                <div>
+                  <label>Sorteio</label>
+                  <input
+                    type="datetime-local"
+                    value={form.draw_at}
+                    onChange={(e) => updateForm("draw_at", e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
 
-          <br /><br />
+            <div style={{ marginTop: 28 }}>
+              <h2 style={{ marginBottom: 12 }}>Imagens principais</h2>
 
-          <label>Preço por cota</label>
-          <input
-            type="number"
-            step="0.01"
-            name="price_per_ticket"
-            value={form.price_per_ticket}
-            onChange={handleChange}
-            min="0.01"
-            required
-          />
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 16,
+                }}
+              >
+                <div>
+                  <label>Banner da rifa</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => handleBannerUpload(e.target.files?.[0])}
+                  />
+                  {bannerPreview && (
+                    <img
+                      src={bannerPreview}
+                      alt="Banner preview"
+                      style={{
+                        width: "100%",
+                        height: 180,
+                        objectFit: "cover",
+                        borderRadius: 16,
+                        marginTop: 12,
+                        border: "1px solid var(--line)",
+                      }}
+                    />
+                  )}
+                </div>
 
-          <br /><br />
+                <div>
+                  <label>Logo da rifa</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => handleLogoUpload(e.target.files?.[0])}
+                  />
+                  {logoPreview && (
+                    <img
+                      src={logoPreview}
+                      alt="Logo preview"
+                      style={{
+                        width: 150,
+                        height: 150,
+                        objectFit: "cover",
+                        borderRadius: 20,
+                        marginTop: 12,
+                        border: "1px solid var(--line)",
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
 
-          <label>Status</label>
-          <select name="status" value={form.status} onChange={handleChange}>
-            <option value="draft">Draft</option>
-            <option value="active">Ativa</option>
-            <option value="paused">Pausada</option>
-            <option value="finished">Finalizada</option>
-          </select>
+            <div style={{ marginTop: 28 }}>
+              <h2 style={{ marginBottom: 12 }}>Cores da rifa</h2>
 
-          <br /><br />
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(4, 1fr)",
+                  gap: 16,
+                }}
+              >
+                <div>
+                  <label>Fundo</label>
+                  <input
+                    type="color"
+                    value={form.design.background_color}
+                    onChange={(e) =>
+                      updateDesign("background_color", e.target.value)
+                    }
+                  />
+                </div>
 
-          <h2>Cores</h2>
+                <div>
+                  <label>Texto</label>
+                  <input
+                    type="color"
+                    value={form.design.text_color}
+                    onChange={(e) => updateDesign("text_color", e.target.value)}
+                  />
+                </div>
 
-          <label>Cor de fundo</label>
-          <input
-            name="background_color"
-            value={form.background_color}
-            onChange={handleChange}
-            placeholder="#6D28D9"
-          />
+                <div>
+                  <label>Botão</label>
+                  <input
+                    type="color"
+                    value={form.design.button_color}
+                    onChange={(e) => updateDesign("button_color", e.target.value)}
+                  />
+                </div>
 
-          <br /><br />
+                <div>
+                  <label>Texto do botão</label>
+                  <input
+                    type="color"
+                    value={form.design.button_text_color}
+                    onChange={(e) =>
+                      updateDesign("button_text_color", e.target.value)
+                    }
+                  />
+                </div>
+              </div>
+            </div>
 
-          <label>Cor do texto</label>
-          <input
-            name="text_color"
-            value={form.text_color}
-            onChange={handleChange}
-            placeholder="#FFFFFF"
-          />
+            <div style={{ marginTop: 28 }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  marginBottom: 16,
+                }}
+              >
+                <h2 style={{ margin: 0 }}>Prêmios</h2>
 
-          <br /><br />
+                <button type="button" onClick={addPrize}>
+                  Adicionar prêmio
+                </button>
+              </div>
 
-          <label>Cor do botão</label>
-          <input
-            name="button_color"
-            value={form.button_color}
-            onChange={handleChange}
-            placeholder="#F59E0B"
-          />
+              <div style={{ display: "grid", gap: 18 }}>
+                {prizes.map((prize, index) => (
+                  <div
+                    key={index}
+                    className="glass-card"
+                    style={{ padding: 18 }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        alignItems: "center",
+                        marginBottom: 12,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <h3 style={{ margin: 0 }}>Prêmio {index + 1}</h3>
 
-          <br /><br />
+                      {prizes.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removePrize(index)}
+                          style={{ background: "#991b1b", color: "#fff" }}
+                        >
+                          Remover
+                        </button>
+                      )}
+                    </div>
 
-          <label>Cor do texto do botão</label>
-          <input
-            name="button_text_color"
-            value={form.button_text_color}
-            onChange={handleChange}
-            placeholder="#111827"
-          />
+                    <div style={{ display: "grid", gap: 14 }}>
+                      <div>
+                        <label>Título do prêmio {index + 1}</label>
+                        <input
+                          type="text"
+                          value={prize.title}
+                          onChange={(e) =>
+                            updatePrize(index, "title", e.target.value)
+                          }
+                          placeholder="Ex: iPhone 15 128GB"
+                        />
+                      </div>
 
-          <br /><br />
+                      <div>
+                        <label>Descrição do prêmio {index + 1}</label>
+                        <textarea
+                          rows="4"
+                          value={prize.description}
+                          onChange={(e) =>
+                            updatePrize(index, "description", e.target.value)
+                          }
+                          placeholder="Descrição do prêmio"
+                        />
+                      </div>
 
-          <h2>Prêmio 1</h2>
+                      <div>
+                        <label>Imagem do prêmio {index + 1}</label>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) =>
+                            handlePrizeImageUpload(index, e.target.files?.[0])
+                          }
+                        />
 
-          <label>Título do prêmio 1</label>
-          <input
-            name="prize1_title"
-            value={form.prize1_title}
-            onChange={handleChange}
-            placeholder="Ex: iPhone 15 128GB"
-          />
+                        {prize.uploading && (
+                          <small className="muted-text">Enviando imagem...</small>
+                        )}
 
-          <br /><br />
+                        {prize.preview && (
+                          <img
+                            src={prize.preview}
+                            alt={`Preview prêmio ${index + 1}`}
+                            style={{
+                              width: 180,
+                              height: 180,
+                              objectFit: "cover",
+                              borderRadius: 16,
+                              marginTop: 12,
+                              border: "1px solid var(--line)",
+                            }}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
 
-          <label>Descrição do prêmio 1</label>
-          <textarea
-            name="prize1_description"
-            value={form.prize1_description}
-            onChange={handleChange}
-            placeholder="Descrição do prêmio"
-          />
+            <div style={{ marginTop: 24 }}>
+              <button type="submit" disabled={saving}>
+                {saving ? "Criando rifa..." : "Criar rifa"}
+              </button>
 
-          <br /><br />
+              {errorMessage && (
+                <p className="error" style={{ marginTop: 12 }}>
+                  {errorMessage}
+                </p>
+              )}
+            </div>
+          </form>
 
-          <label>Imagem do prêmio 1</label>
-          <input
-            type="file"
-            name="prize1"
-            accept="image/*"
-            onChange={handleFileChange}
-          />
+          <div className="glass-card">
+            <h2 style={{ marginTop: 0 }}>Pré-visualização</h2>
+            <p className="muted-text">
+              Veja uma ideia rápida de como a rifa vai aparecer.
+            </p>
 
-          <br /><br />
+            <div
+              style={{
+                marginTop: 18,
+                borderRadius: 24,
+                overflow: "hidden",
+                border: "1px solid var(--line)",
+                background: "#09111f",
+              }}
+            >
+              {previewData.bannerPreview ? (
+                <img
+                  src={previewData.bannerPreview}
+                  alt="Banner"
+                  style={{
+                    width: "100%",
+                    height: 180,
+                    objectFit: "cover",
+                    display: "block",
+                  }}
+                />
+              ) : (
+                <div
+                  style={{
+                    height: 180,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#94a3b8",
+                    background: "rgba(255,255,255,0.04)",
+                  }}
+                >
+                  Banner da rifa
+                </div>
+              )}
 
-          <h2>Prêmio 2</h2>
+              <div
+                style={{
+                  padding: 20,
+                  background: previewData.background_color,
+                  color: previewData.text_color,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+                    {previewData.logoPreview ? (
+                      <img
+                        src={previewData.logoPreview}
+                        alt="Logo"
+                        style={{
+                          width: 64,
+                          height: 64,
+                          objectFit: "cover",
+                          borderRadius: 18,
+                        }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          width: 64,
+                          height: 64,
+                          borderRadius: 18,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          background: "rgba(255,255,255,0.08)",
+                        }}
+                      >
+                        Logo
+                      </div>
+                    )}
 
-          <label>Título do prêmio 2</label>
-          <input
-            name="prize2_title"
-            value={form.prize2_title}
-            onChange={handleChange}
-            placeholder="Ex: Capinha Premium"
-          />
+                    <div>
+                      <h3 style={{ margin: 0 }}>{previewData.title}</h3>
+                      <p style={{ margin: "6px 0 0 0", opacity: 0.9 }}>
+                        {previewData.subtitle}
+                      </p>
+                    </div>
+                  </div>
 
-          <br /><br />
+                  <span className={`status-badge ${previewData.status}`}>
+                    {previewData.status}
+                  </span>
+                </div>
 
-          <label>Descrição do prêmio 2</label>
-          <textarea
-            name="prize2_description"
-            value={form.prize2_description}
-            onChange={handleChange}
-            placeholder="Descrição do prêmio"
-          />
+                <p style={{ marginTop: 16, lineHeight: 1.7 }}>
+                  {previewData.description}
+                </p>
 
-          <br /><br />
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 12,
+                    marginTop: 16,
+                  }}
+                >
+                  <div
+                    style={{
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      borderRadius: 16,
+                      padding: 12,
+                    }}
+                  >
+                    <span style={{ display: "block", opacity: 0.8 }}>
+                      Valor por cota
+                    </span>
+                    <strong>
+                      R$ {previewData.price_per_ticket.toFixed(2).replace(".", ",")}
+                    </strong>
+                  </div>
 
-          <label>Imagem do prêmio 2</label>
-          <input
-            type="file"
-            name="prize2"
-            accept="image/*"
-            onChange={handleFileChange}
-          />
+                  <div
+                    style={{
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      borderRadius: 16,
+                      padding: 12,
+                    }}
+                  >
+                    <span style={{ display: "block", opacity: 0.8 }}>
+                      Total de números
+                    </span>
+                    <strong>{previewData.total_numbers}</strong>
+                  </div>
+                </div>
 
-          <br /><br />
+                <button
+                  type="button"
+                  style={{
+                    marginTop: 18,
+                    background: previewData.button_color,
+                    color: previewData.button_text_color,
+                  }}
+                >
+                  Comprar cotas
+                </button>
 
-          <button type="submit" disabled={loading}>
-            {loading ? "Criando rifa..." : "Criar rifa"}
-          </button>
+                {!!previewData.prizes.length && (
+                  <div style={{ marginTop: 22 }}>
+                    <h4 style={{ marginBottom: 12 }}>Prêmios</h4>
 
-          {message && <p className="success">{message}</p>}
-          {error && <p className="error">{error}</p>}
-        </form>
+                    <div style={{ display: "grid", gap: 10 }}>
+                      {previewData.prizes
+                        .filter((prize) => prize.title)
+                        .map((prize, index) => (
+                          <div
+                            key={index}
+                            style={{
+                              border: "1px solid rgba(255,255,255,0.12)",
+                              borderRadius: 16,
+                              padding: 12,
+                              background: "rgba(255,255,255,0.04)",
+                            }}
+                          >
+                            <strong>{prize.title}</strong>
+                            {prize.description && (
+                              <p style={{ margin: "8px 0 0 0", opacity: 0.9 }}>
+                                {prize.description}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-
-      <AdminRafflePreview
-        data={form}
-        prizes={previewPrizes}
-        bannerPreview={previewUrls.banner}
-        logoPreview={previewUrls.logo}
-      />
     </div>
   );
 }

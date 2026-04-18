@@ -6,6 +6,7 @@ import InlineNotice from "../components/InlineNotice";
 import PageLoader from "../components/PageLoader";
 import { useToast } from "../context/ToastContext";
 import { money } from "../utils/format";
+import { formatStatusLabel } from "../utils/status";
 
 export default function AdminOrders() {
   const { success, error: showError, info } = useToast();
@@ -92,14 +93,18 @@ export default function AdminOrders() {
           <div className="section-title-row">
             <div>
               <h2>Filtros</h2>
-              <p>Busque por cliente, rifa, e-mail ou referência.</p>
+              <p>Busque por cliente, e-mail, telefone, pedido ou rifa.</p>
             </div>
           </div>
 
           <div className="admin-filter-grid">
             <div>
               <label>Status</label>
-              <select name="status" value={filters.status} onChange={handleFilterChange}>
+              <select
+                name="status"
+                value={filters.status}
+                onChange={handleFilterChange}
+              >
                 <option value="">Todos</option>
                 <option value="pending_payment">Pendentes</option>
                 <option value="paid">Pagos</option>
@@ -153,7 +158,7 @@ export default function AdminOrders() {
                   </div>
 
                   <span className={`status-badge ${order.status}`}>
-                    {order.status}
+                    {formatStatusLabel(order.status)}
                   </span>
                 </div>
 

@@ -359,7 +359,7 @@ export default function AdminEditRaffle() {
 
           <br /><br />
 
-          <label>Instagram URL</label>
+          <label>Link do Instagram</label>
           <input
             name="instagram_url"
             value={form.instagram_url}
@@ -368,7 +368,7 @@ export default function AdminEditRaffle() {
 
           <br /><br />
 
-          <label>Preço por cota</label>
+          <label>Preço por número</label>
           <input
             type="number"
             step="0.01"
@@ -383,7 +383,7 @@ export default function AdminEditRaffle() {
 
           <label>Status</label>
           <select name="status" value={form.status} onChange={handleChange}>
-            <option value="draft">Draft</option>
+            <option value="draft">Rascunho</option>
             <option value="active">Ativa</option>
             <option value="paused">Pausada</option>
             <option value="finished">Finalizada</option>

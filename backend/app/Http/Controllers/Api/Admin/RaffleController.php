@@ -4,12 +4,10 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Raffle;
-use App\Services\GenerateRaffleNumbersService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
-use Symfony\Component\HttpFoundation\Response;
+use Illuminate\Validation\Rule;
 
 class RaffleController extends Controller
 {
@@ -17,63 +15,57 @@ class RaffleController extends Controller
     {
         $this->ensureAdmin($request);
 
+        $showArchived = $request->boolean('show_archived', false);
+
         $raffles = Raffle::query()
+            ->when(!$showArchived, function ($query) {
+                $query->where('status', '!=', 'archived');
+            })
             ->with('prizes')
-            ->withCount([
-                'numbers as sold_numbers_count' => fn ($q) => $q->where('status', 'sold'),
-            ])
+            ->withCount('numbers as sold_numbers_count')
             ->latest()
             ->get();
 
         return response()->json($raffles);
     }
 
-    public function show(Request $request, Raffle $raffle): JsonResponse
-    {
-        $this->ensureAdmin($request);
-
-        $raffle->load('prizes');
-        $raffle->loadCount([
-            'numbers as sold_numbers_count' => fn ($q) => $q->where('status', 'sold'),
-        ]);
-
-        return response()->json($raffle);
-    }
-
-    public function store(Request $request, GenerateRaffleNumbersService $numberGenerator): JsonResponse
+    public function store(Request $request): JsonResponse
     {
         $this->ensureAdmin($request);
 
         $validated = $request->validate([
             'title' => ['required', 'string', 'max:255'],
+            'slug' => ['required', 'string', 'max:255', 'unique:raffles,slug'],
             'subtitle' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
             'instagram_url' => ['nullable', 'url', 'max:255'],
             'banner_path' => ['nullable', 'string', 'max:255'],
             'logo_path' => ['nullable', 'string', 'max:255'],
-            'total_numbers' => ['required', 'integer', 'min:1', 'max:100000'],
+            'total_numbers' => ['required', 'integer', 'min:1'],
             'price_per_ticket' => ['required', 'numeric', 'min:0.01'],
-            'status' => ['required', 'in:draft,active,paused,finished'],
+            'status' => ['required', 'string', 'in:draft,active,paused,finished,archived'],
             'starts_at' => ['nullable', 'date'],
-            'ends_at' => ['nullable', 'date', 'after_or_equal:starts_at'],
+            'ends_at' => ['nullable', 'date'],
             'draw_at' => ['nullable', 'date'],
+
             'design' => ['nullable', 'array'],
-            'design.background_color' => ['nullable', 'regex:/^#([A-Fa-f0-9]{6})$/'],
-            'design.text_color' => ['nullable', 'regex:/^#([A-Fa-f0-9]{6})$/'],
-            'design.button_color' => ['nullable', 'regex:/^#([A-Fa-f0-9]{6})$/'],
-            'design.button_text_color' => ['nullable', 'regex:/^#([A-Fa-f0-9]{6})$/'],
+            'design.background_color' => ['nullable', 'string', 'max:20'],
+            'design.text_color' => ['nullable', 'string', 'max:20'],
+            'design.button_color' => ['nullable', 'string', 'max:20'],
+            'design.button_text_color' => ['nullable', 'string', 'max:20'],
+
             'prizes' => ['nullable', 'array'],
             'prizes.*.title' => ['required_with:prizes', 'string', 'max:255'],
             'prizes.*.description' => ['nullable', 'string'],
             'prizes.*.image_path' => ['nullable', 'string', 'max:255'],
-            'prizes.*.sort_order' => ['nullable', 'integer', 'min:0'],
+            'prizes.*.sort_order' => ['nullable', 'integer', 'min:1'],
         ]);
 
-        $raffle = DB::transaction(function () use ($request, $validated, $numberGenerator) {
+        $raffle = DB::transaction(function () use ($validated, $request) {
             $raffle = Raffle::create([
                 'created_by_user_id' => $request->user()->id,
                 'title' => $validated['title'],
-                'slug' => $this->makeUniqueSlug($validated['title']),
+                'slug' => $validated['slug'],
                 'subtitle' => $validated['subtitle'] ?? null,
                 'description' => $validated['description'] ?? null,
                 'instagram_url' => $validated['instagram_url'] ?? null,
@@ -89,22 +81,32 @@ class RaffleController extends Controller
             ]);
 
             if (!empty($validated['prizes'])) {
-                $raffle->prizes()->createMany(
-                    collect($validated['prizes'])->map(fn ($prize) => [
+                foreach ($validated['prizes'] as $index => $prize) {
+                    $raffle->prizes()->create([
                         'title' => $prize['title'],
                         'description' => $prize['description'] ?? null,
                         'image_path' => $prize['image_path'] ?? null,
-                        'sort_order' => $prize['sort_order'] ?? 0,
-                    ])->toArray()
-                );
+                        'sort_order' => $prize['sort_order'] ?? ($index + 1),
+                    ]);
+                }
             }
 
-            $numberGenerator->handle($raffle);
-
-            return $raffle->load('prizes');
+            return $raffle;
         });
 
-        return response()->json($raffle, Response::HTTP_CREATED);
+        return response()->json(
+            $raffle->load('prizes')->loadCount('numbers as sold_numbers_count'),
+            201
+        );
+    }
+
+    public function show(Request $request, Raffle $raffle): JsonResponse
+    {
+        $this->ensureAdmin($request);
+
+        return response()->json(
+            $raffle->load('prizes')->loadCount('numbers as sold_numbers_count')
+        );
     }
 
     public function update(Request $request, Raffle $raffle): JsonResponse
@@ -112,58 +114,75 @@ class RaffleController extends Controller
         $this->ensureAdmin($request);
 
         $validated = $request->validate([
-            'title' => ['sometimes', 'string', 'max:255'],
+            'title' => ['sometimes', 'required', 'string', 'max:255'],
+            'slug' => [
+                'sometimes',
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('raffles', 'slug')->ignore($raffle->id),
+            ],
             'subtitle' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
             'instagram_url' => ['nullable', 'url', 'max:255'],
             'banner_path' => ['nullable', 'string', 'max:255'],
             'logo_path' => ['nullable', 'string', 'max:255'],
-            'price_per_ticket' => ['sometimes', 'numeric', 'min:0.01'],
-            'status' => ['sometimes', 'in:draft,active,paused,finished'],
+            'total_numbers' => ['sometimes', 'required', 'integer', 'min:1'],
+            'price_per_ticket' => ['sometimes', 'required', 'numeric', 'min:0.01'],
+            'status' => ['sometimes', 'required', 'string', 'in:draft,active,paused,finished,archived'],
             'starts_at' => ['nullable', 'date'],
-            'ends_at' => ['nullable', 'date', 'after_or_equal:starts_at'],
+            'ends_at' => ['nullable', 'date'],
             'draw_at' => ['nullable', 'date'],
-            'design' => ['nullable', 'array'],
-            'design.background_color' => ['nullable', 'regex:/^#([A-Fa-f0-9]{6})$/'],
-            'design.text_color' => ['nullable', 'regex:/^#([A-Fa-f0-9]{6})$/'],
-            'design.button_color' => ['nullable', 'regex:/^#([A-Fa-f0-9]{6})$/'],
-            'design.button_text_color' => ['nullable', 'regex:/^#([A-Fa-f0-9]{6})$/'],
-        ]);
 
-        if (isset($validated['title'])) {
-            $validated['slug'] = $this->makeUniqueSlug($validated['title'], $raffle->id);
-        }
+            'design' => ['nullable', 'array'],
+            'design.background_color' => ['nullable', 'string', 'max:20'],
+            'design.text_color' => ['nullable', 'string', 'max:20'],
+            'design.button_color' => ['nullable', 'string', 'max:20'],
+            'design.button_text_color' => ['nullable', 'string', 'max:20'],
+        ]);
 
         $raffle->update($validated);
 
-        return response()->json($raffle->fresh('prizes'));
+        return response()->json(
+            $raffle->fresh()->load('prizes')->loadCount('numbers as sold_numbers_count')
+        );
+    }
+
+    public function destroy(Request $request, Raffle $raffle): JsonResponse
+    {
+        $this->ensureAdmin($request);
+
+        $hasOrders = $raffle->orders()->exists();
+
+        if ($hasOrders) {
+            $raffle->update([
+                'status' => 'archived',
+            ]);
+
+            return response()->json([
+                'message' => 'A rifa foi arquivada. Ela saiu do admin, mas continua no histórico dos clientes.',
+                'mode' => 'archived',
+            ]);
+        }
+
+        DB::transaction(function () use ($raffle) {
+            $raffle->prizes()->delete();
+            $raffle->numbers()->delete();
+            $raffle->delete();
+        });
+
+        return response()->json([
+            'message' => 'Rifa excluída com sucesso.',
+            'mode' => 'deleted',
+        ]);
     }
 
     private function ensureAdmin(Request $request): void
     {
         abort_unless(
             $request->user() && $request->user()->role === 'admin',
-            Response::HTTP_FORBIDDEN,
+            403,
             'Acesso restrito ao administrador.'
         );
-    }
-
-    private function makeUniqueSlug(string $title, ?int $ignoreId = null): string
-    {
-        $base = Str::slug($title);
-        $slug = $base !== '' ? $base : 'rifa';
-        $counter = 1;
-
-        while (
-            Raffle::query()
-                ->when($ignoreId, fn ($q) => $q->where('id', '!=', $ignoreId))
-                ->where('slug', $slug)
-                ->exists()
-        ) {
-            $counter++;
-            $slug = "{$base}-{$counter}";
-        }
-
-        return $slug;
     }
 }

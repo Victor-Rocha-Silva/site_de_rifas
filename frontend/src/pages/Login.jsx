@@ -93,11 +93,6 @@ export default function Login() {
               <strong>Cliente</strong>
               <span>Veja seus pedidos e números recebidos.</span>
             </div>
-
-            <div className="auth-mini-card">
-              <strong>Admin</strong>
-              <span>Gerencie rifas, prêmios e aprovações.</span>
-            </div>
           </div>
 
           {redirectTo && (

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import api from "../services/api";
 import FloatingBackground from "../components/FloatingBackground";
 import { money } from "../utils/format";
+import { formatStatusLabel } from "../utils/status";
 
 export default function AdminDashboard() {
   const [raffles, setRaffles] = useState([]);
@@ -13,12 +14,12 @@ export default function AdminDashboard() {
     async function loadData() {
       try {
         const [rafflesResponse, ordersResponse] = await Promise.all([
-          api.get("/admin/raffles"),
+          api.get("/admin/raffles", { params: { show_archived: true } }),
           api.get("/admin/orders"),
         ]);
 
-        setRaffles(rafflesResponse.data);
-        setOrders(ordersResponse.data);
+        setRaffles(rafflesResponse.data || []);
+        setOrders(ordersResponse.data || []);
       } catch {
         setError("Erro ao carregar o painel admin.");
       }
@@ -33,7 +34,7 @@ export default function AdminDashboard() {
     const totalOrders = orders.length;
     const paidOrders = orders.filter((item) => item.status === "paid").length;
     const pendingOrders = orders.filter((item) => item.status !== "paid").length;
-    const totalRevenue = orders
+    const lucro = orders
       .filter((item) => item.status === "paid")
       .reduce((acc, order) => acc + Number(order.total_amount || 0), 0);
 
@@ -43,12 +44,29 @@ export default function AdminDashboard() {
       totalOrders,
       paidOrders,
       pendingOrders,
-      totalRevenue,
+      lucro,
     };
   }, [raffles, orders]);
 
   const latestOrders = orders.slice(0, 5);
-  const latestRaffles = raffles.slice(0, 4);
+
+  const rafflesWithOrderCount = useMemo(() => {
+    return raffles
+      .map((raffle) => {
+        const raffleOrders = orders.filter((order) => order.raffle?.id === raffle.id);
+        const paidCount = raffleOrders.filter((order) => order.status === "paid").length;
+        const pendingCount = raffleOrders.filter((order) => order.status !== "paid").length;
+
+        return {
+          ...raffle,
+          orders_count: raffleOrders.length,
+          paid_orders_count: paidCount,
+          pending_orders_count: pendingCount,
+        };
+      })
+      .sort((a, b) => b.orders_count - a.orders_count)
+      .slice(0, 6);
+  }, [raffles, orders]);
 
   return (
     <div className="admin-premium-page">
@@ -60,7 +78,7 @@ export default function AdminDashboard() {
             <span className="hero-badge">Painel administrativo</span>
             <h1>Controle total das suas rifas em um só lugar.</h1>
             <p>
-              Gerencie rifas, acompanhe pedidos, aprove pagamentos e mantenha
+              Gerencie rifas, acompanhe pedidos e pagamentos, mantenha
               tudo organizado no seu painel privado.
             </p>
 
@@ -112,8 +130,8 @@ export default function AdminDashboard() {
           </div>
 
           <div className="admin-metric-card highlight">
-            <span>Receita confirmada</span>
-            <strong>{money(metrics.totalRevenue)}</strong>
+            <span>Lucro</span>
+            <strong>{money(metrics.lucro)}</strong>
           </div>
         </section>
 
@@ -141,7 +159,7 @@ export default function AdminDashboard() {
 
                     <div>
                       <span className={`status-badge ${order.status}`}>
-                        {order.status}
+                        {formatStatusLabel(order.status)}
                       </span>
                     </div>
 
@@ -160,8 +178,8 @@ export default function AdminDashboard() {
           <div className="glass-card">
             <div className="section-title-row">
               <div>
-                <h2>Rifas recentes</h2>
-                <p>Resumo das últimas rifas cadastradas.</p>
+                <h2>Pedidos por rifa</h2>
+                <p>Clique na rifa para abrir os pedidos feitos nela.</p>
               </div>
 
               <Link to="/admin/rifas">
@@ -169,19 +187,26 @@ export default function AdminDashboard() {
               </Link>
             </div>
 
-            {latestRaffles.length ? (
+            {rafflesWithOrderCount.length ? (
               <div className="admin-simple-list">
-                {latestRaffles.map((raffle) => (
-                  <div key={raffle.id} className="admin-simple-item">
+                {rafflesWithOrderCount.map((raffle) => (
+                  <Link
+                    key={raffle.id}
+                    to={`/admin/rifas/${raffle.id}/pedidos`}
+                    className="admin-simple-item"
+                    style={{ textDecoration: "none", color: "inherit" }}
+                  >
                     <div>
                       <strong>{raffle.title}</strong>
-                      <p>{raffle.total_numbers} números</p>
+                      <p>
+                        {raffle.orders_count} pedido(s) • pagos: {raffle.paid_orders_count} • pendentes: {raffle.pending_orders_count}
+                      </p>
                     </div>
 
                     <span className={`status-badge ${raffle.status}`}>
-                      {raffle.status}
+                      {formatStatusLabel(raffle.status)}
                     </span>
-                  </div>
+                  </Link>
                 ))}
               </div>
             ) : (

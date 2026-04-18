@@ -1,23 +1,25 @@
 import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
-import { useAuth } from "../context/AuthContext";
 import api from "../services/api";
 import FloatingBackground from "../components/FloatingBackground";
+import EmptyState from "../components/EmptyState";
+import InlineNotice from "../components/InlineNotice";
+import PageLoader from "../components/PageLoader";
 import { money } from "../utils/format";
+import { formatStatusLabel } from "../utils/status";
 
 export default function CustomerDashboard() {
-  const { user } = useAuth();
   const [orders, setOrders] = useState([]);
-  const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     async function loadOrders() {
       try {
         const response = await api.get("/customer/orders");
-        setOrders(response.data);
+        setOrders(response.data || []);
       } catch {
-        setError("Erro ao carregar seu painel.");
+        setError("Não foi possível carregar sua área.");
       } finally {
         setLoading(false);
       }
@@ -29,26 +31,37 @@ export default function CustomerDashboard() {
   const metrics = useMemo(() => {
     const totalOrders = orders.length;
     const paidOrders = orders.filter((order) => order.status === "paid").length;
-    const pendingOrders = orders.filter((order) => order.status !== "paid").length;
-    const totalSpent = orders.reduce(
-      (acc, order) => acc + Number(order.total_amount || 0),
-      0
-    );
-    const totalNumbers = orders.reduce(
-      (acc, order) => acc + (order.numbers?.length || 0),
-      0
-    );
+    const pendingOrders = orders.filter(
+      (order) => order.status === "pending_payment"
+    ).length;
+
+    const confirmedTotal = orders
+      .filter((order) => order.status === "paid")
+      .reduce((acc, order) => acc + Number(order.total_amount || 0), 0);
+
+    const latestNumbers = orders
+      .filter((order) => Array.isArray(order.numbers) && order.numbers.length > 0)
+      .flatMap((order) =>
+        order.numbers.map((item) => ({
+          id: `${order.id}-${item.id}`,
+          number: item.number,
+          raffleTitle: order.raffle?.title || "Rifa",
+          status: order.status,
+        }))
+      )
+      .slice(0, 12);
+
+    const latestOrders = orders.slice(0, 4);
 
     return {
       totalOrders,
       paidOrders,
       pendingOrders,
-      totalSpent,
-      totalNumbers,
+      confirmedTotal,
+      latestNumbers,
+      latestOrders,
     };
   }, [orders]);
-
-  const recentOrders = orders.slice(0, 3);
 
   return (
     <div className="customer-premium-page">
@@ -58,118 +71,148 @@ export default function CustomerDashboard() {
         <section className="customer-hero-card">
           <div>
             <span className="hero-badge">Área do cliente</span>
-            <h1>Olá, {user?.name}</h1>
+            <h1>Acompanhe seus pedidos e números em um só lugar.</h1>
             <p>
-              Aqui você acompanha seus pedidos, seus números recebidos e o
-              andamento das suas participações.
+              Veja seus pedidos pagos, pendentes e os últimos números recebidos
+              sem precisar procurar em várias páginas.
             </p>
-          </div>
 
-          <div className="customer-profile-mini">
-            <div className="customer-avatar">
-              {user?.name?.charAt(0)?.toUpperCase() || "C"}
-            </div>
-
-            <div>
-              <strong>{user?.name}</strong>
-              <span>{user?.email}</span>
-              <small>{user?.phone || "Telefone não informado"}</small>
-            </div>
-          </div>
-        </section>
-
-        {loading && <p>Carregando painel...</p>}
-        {error && <p className="error">{error}</p>}
-
-        <section className="customer-metrics-grid">
-          <div className="customer-metric-card">
-            <span>Pedidos</span>
-            <strong>{metrics.totalOrders}</strong>
-          </div>
-
-          <div className="customer-metric-card">
-            <span>Pagos</span>
-            <strong>{metrics.paidOrders}</strong>
-          </div>
-
-          <div className="customer-metric-card">
-            <span>Pendentes</span>
-            <strong>{metrics.pendingOrders}</strong>
-          </div>
-
-          <div className="customer-metric-card">
-            <span>Números recebidos</span>
-            <strong>{metrics.totalNumbers}</strong>
-          </div>
-
-          <div className="customer-metric-card highlight">
-            <span>Total investido</span>
-            <strong>{money(metrics.totalSpent)}</strong>
-          </div>
-        </section>
-
-        <section className="customer-dashboard-layout">
-          <div className="glass-card">
-            <div className="section-title-row">
-              <div>
-                <h2>Pedidos recentes</h2>
-                <p>Veja suas compras mais recentes.</p>
-              </div>
+            <div className="admin-hero-actions">
+              <Link to="/rifas">
+                <button>Ver rifas</button>
+              </Link>
 
               <Link to="/cliente/pedidos">
-                <button>Ver todos</button>
+                <button className="secondary-btn">Meus pedidos</button>
               </Link>
-            </div>
-
-            {recentOrders.length ? (
-              <div className="customer-order-list">
-                {recentOrders.map((order) => (
-                  <div key={order.id} className="customer-order-row">
-                    <div>
-                      <strong>{order.raffle?.title}</strong>
-                      <p>Pedido: {order.public_id}</p>
-                    </div>
-
-                    <div>
-                      <span className={`status-badge ${order.status}`}>
-                        {order.status}
-                      </span>
-                    </div>
-
-                    <div>
-                      <strong>{money(order.total_amount)}</strong>
-                      <p>{order.quantity} cota(s)</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p>Você ainda não possui pedidos.</p>
-            )}
-          </div>
-
-          <div className="glass-card">
-            <h2>Seus números</h2>
-            <p className="muted-text">
-              Os números aparecem aqui assim que o pedido for aprovado.
-            </p>
-
-            <div className="customer-number-wall">
-              {orders
-                .flatMap((order) => order.numbers || [])
-                .slice(0, 18)
-                .map((item) => (
-                  <div key={item.id} className="number-chip">
-                    {item.number}
-                  </div>
-                ))}
-
-              {!orders.flatMap((order) => order.numbers || []).length && (
-                <p>Nenhum número recebido ainda.</p>
-              )}
             </div>
           </div>
         </section>
+
+        {loading && (
+          <PageLoader
+            title="Carregando sua área"
+            description="Estamos organizando seus pedidos e números."
+          />
+        )}
+
+        {!loading && error && (
+          <InlineNotice type="error" title="Erro ao carregar">
+            {error}
+          </InlineNotice>
+        )}
+
+        {!loading && !error && (
+          <>
+            <section className="customer-metrics-grid">
+              <div className="customer-metric-card">
+                <span>Total de pedidos</span>
+                <strong>{metrics.totalOrders}</strong>
+              </div>
+
+              <div className="customer-metric-card">
+                <span>Pedidos pagos</span>
+                <strong>{metrics.paidOrders}</strong>
+              </div>
+
+              <div className="customer-metric-card">
+                <span>Pedidos pendentes</span>
+                <strong>{metrics.pendingOrders}</strong>
+              </div>
+
+              <div className="customer-metric-card highlight">
+                <span>Total confirmado</span>
+                <strong>{money(metrics.confirmedTotal)}</strong>
+              </div>
+            </section>
+
+            <section className="customer-dashboard-layout">
+              <div className="glass-card">
+                <div className="section-title-row">
+                  <div>
+                    <h2>Últimos pedidos</h2>
+                    <p>Resumo rápido das suas compras mais recentes.</p>
+                  </div>
+
+                  <Link to="/cliente/pedidos">
+                    <button>Ver todos</button>
+                  </Link>
+                </div>
+
+                {!metrics.latestOrders.length ? (
+                  <EmptyState
+                    title="Nenhum pedido ainda"
+                    description="Assim que você participar de uma rifa, seus pedidos aparecerão aqui."
+                    action={
+                      <Link to="/rifas">
+                        <button>Explorar rifas</button>
+                      </Link>
+                    }
+                  />
+                ) : (
+                  <div className="customer-order-list">
+                    {metrics.latestOrders.map((order) => (
+                      <div key={order.id} className="customer-order-row">
+                        <div>
+                          <strong>{order.raffle?.title || "Rifa"}</strong>
+                          <p>Pedido: {order.public_id}</p>
+                        </div>
+
+                        <div>
+                          <span className={`status-badge ${order.status}`}>
+                            {formatStatusLabel(order.status)}
+                          </span>
+                        </div>
+
+                        <div>
+                          <strong>{money(order.total_amount)}</strong>
+                          <p>{order.quantity} cota(s)</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="glass-card">
+                <div className="section-title-row">
+                  <div>
+                    <h2>Últimos números</h2>
+                    <p>Os números mais recentes recebidos por você.</p>
+                  </div>
+                </div>
+
+                {!metrics.latestNumbers.length ? (
+                  <InlineNotice type="warning" title="Sem números gerados">
+                    Quando um pedido for aprovado, seus números aparecerão aqui.
+                  </InlineNotice>
+                ) : (
+                  <>
+                    <div className="customer-number-wall big">
+                      {metrics.latestNumbers.map((item) => (
+                        <div key={item.id} className="number-chip">
+                          {item.number}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ marginTop: 16 }}>
+                      {metrics.latestNumbers.slice(0, 4).map((item) => (
+                        <p
+                          key={`${item.id}-label`}
+                          className="muted-text"
+                          style={{ margin: "6px 0" }}
+                        >
+                          {item.number} • {item.raffleTitle}
+                        </p>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            </section>
+          </>
+        )}
       </div>
     </div>
   );

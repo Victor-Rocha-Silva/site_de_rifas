@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import api from "../services/api";
 import FloatingBackground from "../components/FloatingBackground";
 import { money } from "../utils/format";
+import { formatStatusLabel } from "../utils/status";
 
 export default function CustomerOrderDetails() {
   const { publicId } = useParams();
@@ -62,7 +63,7 @@ export default function CustomerOrderDetails() {
               </div>
 
               <span className={`status-badge ${order.status}`}>
-                {order.status}
+                {formatStatusLabel(order.status)}
               </span>
             </div>
 

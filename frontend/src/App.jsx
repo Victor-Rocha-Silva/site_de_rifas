@@ -22,6 +22,7 @@ import AdminRaffles from "./pages/AdminRaffles";
 import AdminCreateRaffle from "./pages/AdminCreateRaffle";
 import AdminEditRaffle from "./pages/AdminEditRaffle";
 import AdminOrders from "./pages/AdminOrders";
+import AdminRaffleOrders from "./pages/AdminRaffleOrders";
 import NotFound from "./pages/NotFound";
 
 function PublicOnlyRoute({ children }) {
@@ -79,11 +80,7 @@ function NavbarContent() {
       };
     }
 
-    return {
-      to: "/rifas",
-      label: "Entrar na área",
-      className: "premium-ghost-btn",
-    };
+    return null;
   }, [user]);
 
   return (
@@ -92,7 +89,7 @@ function NavbarContent() {
         <Link to={brandTarget} className="premium-brand" onClick={closeMenu}>
           <span className="premium-brand-mark">R</span>
           <div className="premium-brand-text">
-            <strong>RifaHub</strong>
+            <strong>Rifex</strong>
             <small>{user ? "área interna" : "landing e acesso"}</small>
           </div>
         </Link>
@@ -117,7 +114,7 @@ function NavbarContent() {
                   onClick={closeMenu}
                   className={isActive("/", true) ? "active" : ""}
                 >
-                  Landing
+                  Página inicial
                 </Link>
 
                 <Link
@@ -173,7 +170,7 @@ function NavbarContent() {
                   onClick={closeMenu}
                   className={isActive("/admin", true) ? "active" : ""}
                 >
-                  Dashboard
+                  Página inicial
                 </Link>
 
                 <Link
@@ -216,11 +213,13 @@ function NavbarContent() {
                   </div>
                 </div>
 
-                <Link to={mainAction.to} onClick={closeMenu}>
-                  <button className={mainAction.className}>
-                    {mainAction.label}
-                  </button>
-                </Link>
+                {mainAction && (
+                  <Link to={mainAction.to} onClick={closeMenu}>
+                    <button className={mainAction.className}>
+                      {mainAction.label}
+                    </button>
+                  </Link>
+                )}
 
                 <button
                   onClick={() => {
@@ -343,6 +342,15 @@ function AppRoutes() {
         element={
           <ProtectedRoute role="admin">
             <AdminEditRaffle />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/rifas/:raffleId/pedidos"
+        element={
+          <ProtectedRoute role="admin">
+            <AdminRaffleOrders />
           </ProtectedRoute>
         }
       />

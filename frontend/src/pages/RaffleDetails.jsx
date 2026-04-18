@@ -5,6 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import FloatingBackground from "../components/FloatingBackground";
 import ProgressBar from "../components/ProgressBar";
 import { mediaUrl, money, raffleProgress } from "../utils/format";
+import { formatStatusLabel } from "../utils/status";
 
 function formatDate(dateValue) {
   if (!dateValue) return "Não definido";
@@ -108,7 +109,7 @@ export default function RaffleDetails() {
 
       <div className="container raffle-premium-container">
         <div className="raffle-breadcrumb">
-          <Link to="/">Início</Link>
+          <Link to="/rifas">Rifas</Link>
           <span>/</span>
           <span>{raffle.title}</span>
         </div>
@@ -154,7 +155,7 @@ export default function RaffleDetails() {
                 </div>
 
                 <span className={`status-badge ${raffle.status || "active"}`}>
-                  {raffle.status || "active"}
+                  {formatStatusLabel(raffle.status || "active")}
                 </span>
               </div>
 

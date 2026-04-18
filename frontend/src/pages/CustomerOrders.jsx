@@ -6,6 +6,7 @@ import EmptyState from "../components/EmptyState";
 import InlineNotice from "../components/InlineNotice";
 import PageLoader from "../components/PageLoader";
 import { money } from "../utils/format";
+import { formatStatusLabel } from "../utils/status";
 
 export default function CustomerOrders() {
   const [orders, setOrders] = useState([]);
@@ -17,7 +18,7 @@ export default function CustomerOrders() {
     async function loadOrders() {
       try {
         const response = await api.get("/customer/orders");
-        setOrders(response.data);
+        setOrders(response.data || []);
       } catch {
         setError("Não foi possível carregar seus pedidos.");
       } finally {
@@ -33,6 +34,22 @@ export default function CustomerOrders() {
     return orders.filter((order) => order.status === filter);
   }, [orders, filter]);
 
+  const metrics = useMemo(() => {
+    const total = orders.length;
+    const paid = orders.filter((order) => order.status === "paid").length;
+    const pending = orders.filter((order) => order.status === "pending_payment").length;
+    const totalValue = orders
+      .filter((order) => order.status === "paid")
+      .reduce((acc, order) => acc + Number(order.total_amount || 0), 0);
+
+    return {
+      total,
+      paid,
+      pending,
+      totalValue,
+    };
+  }, [orders]);
+
   return (
     <div className="customer-premium-page">
       <FloatingBackground />
@@ -42,6 +59,28 @@ export default function CustomerOrders() {
           <h1>Meus pedidos</h1>
           <p>Acompanhe o status de cada pedido e os números recebidos.</p>
         </div>
+
+        <section className="customer-metrics-grid">
+          <div className="customer-metric-card">
+            <span>Total de pedidos</span>
+            <strong>{metrics.total}</strong>
+          </div>
+
+          <div className="customer-metric-card">
+            <span>Pedidos pagos</span>
+            <strong>{metrics.paid}</strong>
+          </div>
+
+          <div className="customer-metric-card">
+            <span>Pedidos pendentes</span>
+            <strong>{metrics.pending}</strong>
+          </div>
+
+          <div className="customer-metric-card highlight">
+            <span>Total confirmado</span>
+            <strong>{money(metrics.totalValue)}</strong>
+          </div>
+        </section>
 
         <div className="glass-card customer-filter-card">
           <h2>Filtrar pedidos</h2>
@@ -89,7 +128,7 @@ export default function CustomerOrders() {
                   </div>
 
                   <span className={`status-badge ${order.status}`}>
-                    {order.status}
+                    {formatStatusLabel(order.status)}
                   </span>
                 </div>
 
