@@ -11,6 +11,16 @@ use Illuminate\Http\Request;
 
 class MercadoPagoController extends Controller
 {
+
+    public function checkout(Order $order, MercadoPagoService $mercadoPagoService)
+    {
+        $preference = $mercadoPagoService->createCheckoutPreference($order);
+
+        return response()->json([
+            'init_point' => $preference->init_point,
+        ]);
+    }
+
     public function success(Request $request): JsonResponse
     {
         return response()->json([

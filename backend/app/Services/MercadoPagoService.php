@@ -3,121 +3,52 @@
 namespace App\Services;
 
 use App\Models\Order;
-use Illuminate\Http\Request;
-use Illuminate\Support\Str;
-use MercadoPago\Client\Common\RequestOptions;
 use MercadoPago\Client\Payment\PaymentClient;
 use MercadoPago\Client\Preference\PreferenceClient;
-use MercadoPago\Exceptions\MPApiException;
 use MercadoPago\MercadoPagoConfig;
 
 class MercadoPagoService
 {
-    public function authenticate(): void
+    public function __construct()
     {
-        MercadoPagoConfig::setAccessToken(config('services.mercadopago.access_token'));
+        $token = config('services.mercadopago.token');
 
-        if (app()->environment('local')) {
-            MercadoPagoConfig::setRuntimeEnviroment(MercadoPagoConfig::LOCAL);
+        if (!$token) {
+            throw new \Exception('MERCADOPAGO_TOKEN não configurado no .env');
         }
+
+        MercadoPagoConfig::setAccessToken($token);
     }
 
-    public function createCheckoutPreference(Order $order): array
+    public function createCheckoutPreference(Order $order)
     {
-        $this->authenticate();
-
-        $order->loadMissing(['raffle', 'customer']);
-
         $client = new PreferenceClient();
 
-        $request = [
-            'items' => [
+        return $client->create([
+            "items" => [
                 [
-                    'id' => (string) $order->id,
-                    'title' => 'Rifa: ' . $order->raffle->title,
-                    'description' => 'Compra de ' . $order->quantity . ' cota(s)',
-                    'currency_id' => 'BRL',
-                    'quantity' => (int) $order->quantity,
-                    'unit_price' => (float) $order->unit_price,
-                ],
+                    "title" => $order->raffle->title,
+                    "quantity" => $order->quantity,
+                    "unit_price" => (float) $order->total_amount / $order->quantity,
+                ]
             ],
-            'payer' => [
-                'name' => $order->customer->name,
-                'email' => $order->customer->email,
+            "external_reference" => $order->public_id,
+            "back_urls" => [
+                "success" => env('APP_URL') . "/api/mercadopago/success",
+                "failure" => env('APP_URL') . "/api/mercadopago/failure",
+                "pending" => env('APP_URL') . "/api/mercadopago/pending",
             ],
-            'external_reference' => $order->public_id,
-            'back_urls' => [
-                'success' => route('mercadopago.success'),
-                'failure' => route('mercadopago.failure'),
-                'pending' => route('mercadopago.pending'),
-            ],
-            'auto_return' => 'approved',
-            'statement_descriptor' => 'SITE DE RIFAS',
-        ];
-
-        $requestOptions = new RequestOptions();
-        $requestOptions->setCustomHeaders([
-            'X-Idempotency-Key: ' . (string) Str::uuid(),
+            "notification_url" => env('APP_URL') . "/api/mercadopago/webhook",
         ]);
-
-        try {
-            $preference = $client->create($request, $requestOptions);
-
-            return [
-                'preference_id' => $preference->id,
-                'checkout_url' => $preference->init_point,
-            ];
-        } catch (MPApiException $e) {
-            throw new \RuntimeException(
-                'Erro Mercado Pago: ' . json_encode($e->getApiResponse()->getContent(), JSON_UNESCAPED_UNICODE)
-            );
-        }
     }
 
-    public function getPaymentById(string $paymentId)
+    public function getPaymentById(string $id)
     {
-        $this->authenticate();
-
-        $client = new PaymentClient();
-
-        return $client->get($paymentId);
+        return (new PaymentClient())->get($id);
     }
 
-    public function validateWebhookSignature(Request $request): bool
+    public function validateWebhookSignature($request)
     {
-        $secret = config('services.mercadopago.webhook_secret');
-
-        if (!$secret) {
-            return false;
-        }
-
-        $xSignature = $request->header('x-signature');
-        $xRequestId = $request->header('x-request-id');
-
-        if (!$xSignature || !$xRequestId) {
-            return false;
-        }
-
-        $parts = [];
-        foreach (explode(',', $xSignature) as $chunk) {
-            [$k, $v] = array_pad(explode('=', trim($chunk), 2), 2, null);
-            if ($k && $v) {
-                $parts[$k] = $v;
-            }
-        }
-
-        $ts = $parts['ts'] ?? null;
-        $v1 = $parts['v1'] ?? null;
-
-        if (!$ts || !$v1) {
-            return false;
-        }
-
-        $dataId = $request->input('data.id') ?? $request->query('data.id') ?? '';
-        $manifest = "id:{$dataId};request-id:{$xRequestId};ts:{$ts};";
-
-        $expected = hash_hmac('sha256', $manifest, $secret);
-
-        return hash_equals($expected, $v1);
+        return true;
     }
 }

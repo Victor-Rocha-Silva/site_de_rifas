@@ -78,10 +78,17 @@ export default function RaffleDetails() {
     setMessage("");
 
     try {
-      const response = await api.post("/orders", {
-        raffle_id: raffle.id,
-        quantity: Number(quantity),
-      });
+
+      const orderResponse = await api.post("/orders", {
+  raffle_id: raffle.id,
+  quantity: Number(quantity),
+});
+
+const order = orderResponse.data.order;
+
+const checkout = await api.post(`/mercadopago/checkout/${order.id}`);
+
+window.location.href = checkout.data.init_point;
 
       setMessage(response.data.message || "Pedido criado com sucesso.");
 

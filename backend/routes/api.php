@@ -9,6 +9,16 @@ use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PublicRaffleController;
 use App\Http\Controllers\Api\CustomerRaffleController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\MercadoPagoController;
+
+Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/mercadopago/checkout/{order}', [MercadoPagoController::class, 'checkout']);
+});
+
+Route::post('/mercadopago/webhook', [MercadoPagoController::class, 'webhook']);
+Route::get('/mercadopago/success', [MercadoPagoController::class, 'success']);
+Route::get('/mercadopago/failure', [MercadoPagoController::class, 'failure']);
+Route::get('/mercadopago/pending', [MercadoPagoController::class, 'pending']);
 
 Route::prefix('auth')->group(function () {
     Route::post('/register/customer', [AuthController::class, 'registerCustomer']);
