@@ -15,12 +15,9 @@ class RaffleNumber extends Model
         'assigned_at',
     ];
 
-    protected function casts(): array
-    {
-        return [
-            'assigned_at' => 'datetime',
-        ];
-    }
+    protected $casts = [
+        'assigned_at' => 'datetime',
+    ];
 
     public function raffle()
     {

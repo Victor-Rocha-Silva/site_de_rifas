@@ -1,10 +1,9 @@
 import axios from "axios";
 
-export const API_URL = "http://127.0.0.1:8000/api";
 export const BACKEND_URL = "http://127.0.0.1:8000";
 
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL: `${BACKEND_URL}/api`,
   headers: {
     Accept: "application/json",
     "Content-Type": "application/json",

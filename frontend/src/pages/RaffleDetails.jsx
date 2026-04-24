@@ -73,30 +73,48 @@ export default function RaffleDetails() {
       return;
     }
 
+    if (!raffle?.id) {
+      setError("Rifa inválida.");
+      return;
+    }
+
+    if (!quantity || Number(quantity) < 1) {
+      setError("Escolha pelo menos 1 cota.");
+      return;
+    }
+
+    if (Number(quantity) > Number(raffle.available_numbers_count || 0)) {
+      setError("Não há números disponíveis suficientes para essa compra.");
+      return;
+    }
+
     setSubmitting(true);
     setError("");
     setMessage("");
 
     try {
+      const response = await api.post("/orders", {
+        raffle_id: raffle.id,
+        quantity: Number(quantity),
+      });
 
-      const orderResponse = await api.post("/orders", {
-  raffle_id: raffle.id,
-  quantity: Number(quantity),
-});
+      const checkoutUrl = response.data.checkout_url;
 
-const order = orderResponse.data.order;
+      if (!checkoutUrl) {
+        setError("Não foi possível gerar o link de pagamento.");
+        return;
+      }
 
-const checkout = await api.post(`/mercadopago/checkout/${order.id}`);
+      setMessage("Pedido criado. Redirecionando para o Mercado Pago...");
 
-window.location.href = checkout.data.init_point;
-
-      setMessage(response.data.message || "Pedido criado com sucesso.");
-
-      setTimeout(() => {
-        navigate("/cliente/pedidos");
-      }, 1200);
+      window.location.href = checkoutUrl;
     } catch (err) {
-      setError(err.response?.data?.message || "Erro ao criar pedido.");
+      console.error(err);
+
+      setError(
+        err.response?.data?.message ||
+          "Erro ao criar pedido. Tente novamente."
+      );
     } finally {
       setSubmitting(false);
     }
@@ -281,7 +299,7 @@ window.location.href = checkout.data.init_point;
                   color: raffle.design?.button_text_color || "#ffffff",
                 }}
               >
-                {submitting ? "Criando pedido..." : "Comprar cotas"}
+                {submitting ? "Gerando pagamento..." : "Comprar cotas"}
               </button>
 
               {!user && (

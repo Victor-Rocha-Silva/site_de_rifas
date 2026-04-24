@@ -5,14 +5,15 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\Raffle;
+use App\Services\MercadoPagoService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Symfony\Component\HttpFoundation\Response;
+use Illuminate\Support\Str;
 
 class OrderController extends Controller
 {
-    public function store(Request $request): JsonResponse
+    public function store(Request $request, MercadoPagoService $mercadoPagoService): JsonResponse
     {
         $this->ensureCustomer($request);
 
@@ -37,68 +38,76 @@ class OrderController extends Controller
             ], 422);
         }
 
-        $order = DB::transaction(function () use ($request, $validated, $raffle) {
+        $unitPrice = $this->getRafflePrice($raffle);
+        $totalAmount = $unitPrice * $validated['quantity'];
+
+        $order = DB::transaction(function () use ($request, $raffle, $validated, $unitPrice, $totalAmount) {
             return Order::create([
+                'public_id' => (string) Str::uuid(),
                 'raffle_id' => $raffle->id,
-                'customer_user_id' => $request->user()->id,
+                'customer_user_id' => optional($request->user())->id,
                 'quantity' => $validated['quantity'],
-                'unit_price' => $raffle->price_per_ticket,
-                'total_amount' => bcmul((string) $raffle->price_per_ticket, (string) $validated['quantity'], 2),
+                'unit_price' => $unitPrice,
+                'total_amount' => $totalAmount,
                 'status' => 'pending_payment',
-                'payment_provider' => 'manual',
-                'payment_reference' => null,
-                'payment_id' => null,
-                'checkout_url' => null,
-                'metadata' => [
-                    'manual_payment' => true,
-                ],
+                'payment_provider' => 'mercadopago',
             ]);
         });
 
+        $checkoutUrl = $mercadoPagoService->createCheckout($order);
+
+        $order->update([
+            'checkout_url' => $checkoutUrl,
+        ]);
+
         return response()->json([
-            'message' => 'Pedido criado com sucesso. Aguarde a aprovação do administrador.',
-            'order' => $order->load('raffle'),
-        ], Response::HTTP_CREATED);
-    }
-
-    public function index(Request $request): JsonResponse
-    {
-        $this->ensureCustomer($request);
-
-        $orders = Order::query()
-            ->where('customer_user_id', $request->user()->id)
-            ->with([
-                'raffle',
-                'numbers' => fn ($q) => $q->orderBy('number'),
-            ])
-            ->latest()
-            ->get();
-
-        return response()->json($orders);
+            'message' => 'Pedido criado com sucesso.',
+            'order' => $order->fresh(),
+            'checkout_url' => $checkoutUrl,
+        ], 201);
     }
 
     public function show(Request $request, string $publicId): JsonResponse
     {
-        $this->ensureCustomer($request);
-
         $order = Order::query()
             ->where('public_id', $publicId)
-            ->where('customer_user_id', $request->user()->id)
-            ->with([
-                'raffle',
-                'numbers' => fn ($q) => $q->orderBy('number'),
-            ])
+            ->with(['raffle'])
             ->firstOrFail();
 
-        return response()->json($order);
+        if ($order->customer_user_id && $request->user() && $order->customer_user_id !== $request->user()->id) {
+            abort(403, 'Você não tem permissão para ver este pedido.');
+        }
+
+        return response()->json([
+            'order' => $order,
+        ]);
     }
 
     private function ensureCustomer(Request $request): void
     {
-        abort_unless(
-            $request->user() && $request->user()->role === 'customer',
-            Response::HTTP_FORBIDDEN,
-            'Acesso restrito ao cliente.'
-        );
+        if (!$request->user()) {
+            abort(401, 'Você precisa estar logado para comprar.');
+        }
     }
+
+ private function getRafflePrice(Raffle $raffle): float
+{
+    if (isset($raffle->price_per_ticket)) {
+        return (float) $raffle->price_per_ticket;
+    }
+
+    if (isset($raffle->ticket_price)) {
+        return (float) $raffle->ticket_price;
+    }
+
+    if (isset($raffle->price)) {
+        return (float) $raffle->price;
+    }
+
+    if (isset($raffle->unit_price)) {
+        return (float) $raffle->unit_price;
+    }
+
+    abort(500, 'Preço da rifa não encontrado. Verifique a coluna price_per_ticket na tabela raffles.');
+}
 }

@@ -24,6 +24,9 @@ import AdminEditRaffle from "./pages/AdminEditRaffle";
 import AdminOrders from "./pages/AdminOrders";
 import AdminRaffleOrders from "./pages/AdminRaffleOrders";
 import NotFound from "./pages/NotFound";
+import PaymentSuccess from "./pages/PaymentSuccess";
+import PaymentError from "./pages/PaymentError";
+import PaymentPending from "./pages/PaymentPending";
 
 function PublicOnlyRoute({ children }) {
   const { user, loading } = useAuth();
@@ -306,6 +309,33 @@ function AppRoutes() {
         element={
           <ProtectedRoute role="customer">
             <CustomerOrderDetails />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/pagamento/sucesso"
+        element={
+          <ProtectedRoute role="customer">
+            <PaymentSuccess />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/pagamento/erro"
+        element={
+          <ProtectedRoute role="customer">
+            <PaymentError />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/pagamento/pendente"
+        element={
+          <ProtectedRoute role="customer">
+            <PaymentPending />
           </ProtectedRoute>
         }
       />

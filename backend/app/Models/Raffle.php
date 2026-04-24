@@ -24,16 +24,13 @@ class Raffle extends Model
         'design',
     ];
 
-    protected function casts(): array
-    {
-        return [
-            'design' => 'array',
-            'starts_at' => 'datetime',
-            'ends_at' => 'datetime',
-            'draw_at' => 'datetime',
-            'price_per_ticket' => 'decimal:2',
-        ];
-    }
+    protected $casts = [
+        'design' => 'array',
+        'starts_at' => 'datetime',
+        'ends_at' => 'datetime',
+        'draw_at' => 'datetime',
+        'price_per_ticket' => 'decimal:2',
+    ];
 
     public function creator()
     {

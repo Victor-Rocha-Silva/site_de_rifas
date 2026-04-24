@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Str;
 
 class Order extends Model
 {
@@ -23,24 +22,12 @@ class Order extends Model
         'metadata',
     ];
 
-    protected function casts(): array
-    {
-        return [
-            'metadata' => 'array',
-            'paid_at' => 'datetime',
-            'unit_price' => 'decimal:2',
-            'total_amount' => 'decimal:2',
-        ];
-    }
-
-    protected static function booted(): void
-    {
-        static::creating(function (Order $order) {
-            if (empty($order->public_id)) {
-                $order->public_id = (string) Str::uuid();
-            }
-        });
-    }
+    protected $casts = [
+        'unit_price' => 'decimal:2',
+        'total_amount' => 'decimal:2',
+        'paid_at' => 'datetime',
+        'metadata' => 'array',
+    ];
 
     public function raffle()
     {

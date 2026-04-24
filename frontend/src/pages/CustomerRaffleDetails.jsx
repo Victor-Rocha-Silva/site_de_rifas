@@ -13,6 +13,10 @@ export default function CustomerRaffleDetails() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const [quantity, setQuantity] = useState(1);
+  const [buying, setBuying] = useState(false);
+  const [buyError, setBuyError] = useState("");
+
   useEffect(() => {
     async function loadRaffle() {
       try {
@@ -40,6 +44,80 @@ export default function CustomerRaffleDetails() {
   const mySet = useMemo(() => {
     return new Set((raffle?.my_numbers || []).map(Number));
   }, [raffle]);
+
+  const availableCount = useMemo(() => {
+    if (!raffle?.total_numbers) return 0;
+    return raffle.total_numbers - (raffle?.sold_numbers?.length || 0);
+  }, [raffle]);
+
+  const ticketPrice = useMemo(() => {
+    if (!raffle) return 0;
+
+    return Number(
+      raffle.ticket_price ??
+        raffle.price ??
+        raffle.unit_price ??
+        raffle.value ??
+        0
+    );
+  }, [raffle]);
+
+  const totalAmount = useMemo(() => {
+    return ticketPrice * Number(quantity || 0);
+  }, [ticketPrice, quantity]);
+
+  function formatMoney(value) {
+    return Number(value || 0).toLocaleString("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    });
+  }
+
+  async function handleBuy() {
+    try {
+      setBuying(true);
+      setBuyError("");
+
+      if (!raffle?.id) {
+        setBuyError("Rifa inválida.");
+        return;
+      }
+
+      if (!quantity || Number(quantity) < 1) {
+        setBuyError("Escolha pelo menos 1 número.");
+        return;
+      }
+
+      if (Number(quantity) > availableCount) {
+        setBuyError("Não há números disponíveis suficientes.");
+        return;
+      }
+
+      const response = await api.post("/orders", {
+        raffle_id: raffle.id,
+        quantity: Number(quantity),
+      });
+
+      const checkoutUrl = response.data.checkout_url;
+
+      if (!checkoutUrl) {
+        setBuyError("Não foi possível gerar o link de pagamento.");
+        return;
+      }
+
+      window.location.href = checkoutUrl;
+    } catch (error) {
+      console.error(error);
+
+      const message =
+        error.response?.data?.message ||
+        "Erro ao criar pagamento. Tente novamente.";
+
+      setBuyError(message);
+    } finally {
+      setBuying(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -108,10 +186,102 @@ export default function CustomerRaffleDetails() {
             </div>
 
             <div className="customer-order-meta-box">
+              <span>Disponíveis</span>
+              <strong>{availableCount}</strong>
+            </div>
+
+            <div className="customer-order-meta-box">
               <span>Seus números</span>
               <strong>{raffle.my_numbers.length}</strong>
             </div>
           </div>
+        </div>
+
+        <div className="glass-card" style={{ marginBottom: 20 }}>
+          <div className="card-row">
+            <div>
+              <h2>Comprar números</h2>
+              <p>Escolha a quantidade e finalize pelo Mercado Pago.</p>
+            </div>
+
+            <div style={{ textAlign: "right" }}>
+              <span className="muted-text">Valor por número</span>
+              <h3 style={{ marginTop: 4 }}>{formatMoney(ticketPrice)}</h3>
+            </div>
+          </div>
+
+          {buyError && (
+            <div style={{ marginTop: 16 }}>
+              <InlineNotice type="error" title="Erro na compra">
+                {buyError}
+              </InlineNotice>
+            </div>
+          )}
+
+          <div
+            className="customer-order-meta-grid"
+            style={{ marginTop: 18, alignItems: "end" }}
+          >
+            <div className="customer-order-meta-box">
+              <span>Quantidade</span>
+
+              <input
+                type="number"
+                min="1"
+                max={availableCount}
+                value={quantity}
+                onChange={(event) => setQuantity(event.target.value)}
+                style={{
+                  width: "100%",
+                  marginTop: 8,
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(255,255,255,0.18)",
+                  background: "rgba(255,255,255,0.08)",
+                  color: "inherit",
+                  outline: "none",
+                  fontSize: 16,
+                }}
+              />
+            </div>
+
+            <div className="customer-order-meta-box">
+              <span>Total</span>
+              <strong>{formatMoney(totalAmount)}</strong>
+            </div>
+
+            <div className="customer-order-meta-box">
+              <span>Pagamento</span>
+
+              <button
+                type="button"
+                onClick={handleBuy}
+                disabled={buying || availableCount <= 0}
+                style={{
+                  width: "100%",
+                  marginTop: 8,
+                  padding: "12px 16px",
+                  borderRadius: 12,
+                  border: "none",
+                  cursor: buying || availableCount <= 0 ? "not-allowed" : "pointer",
+                  fontWeight: 700,
+                  background:
+                    buying || availableCount <= 0
+                      ? "rgba(255,255,255,0.25)"
+                      : "linear-gradient(135deg, #7c3aed, #ec4899)",
+                  color: "#fff",
+                }}
+              >
+                {buying ? "Gerando pagamento..." : "Comprar agora"}
+              </button>
+            </div>
+          </div>
+
+          {availableCount <= 0 && (
+            <p className="muted-text" style={{ marginTop: 14 }}>
+              Essa rifa não possui números disponíveis no momento.
+            </p>
+          )}
         </div>
 
         <div className="glass-card" style={{ marginBottom: 20 }}>
@@ -186,6 +356,12 @@ export default function CustomerRaffleDetails() {
                 </div>
               </div>
             ))}
+
+            {raffle.orders.length === 0 && (
+              <p className="muted-text">
+                Você ainda não fez pedidos nesta rifa.
+              </p>
+            )}
           </div>
         </div>
       </div>
